@@ -1,0 +1,161 @@
+---
+- hosts: localhost
+  connection: local
+  vars:
+      # 512MB size
+    - droplet_size: 512mb
+      # Ubuntu 14.04 x64
+    - droplet_image: 11388420
+      # nyc2
+    - droplet_region: nyc3
+      # my ssh key
+    - droplet_ssh_keys: 761015
+  tasks:
+    - name: Create odin
+      digital_ocean: >
+        state=present
+        command=droplet
+        size_id={{ droplet_size }}
+        region_id={{ droplet_region }}
+        image_id={{ droplet_image }}
+        ssh_key_ids={{ droplet_ssh_keys }}
+        name=odin
+        unique_name=yes
+      register: do
+    - name: Add new host to our inventory.
+      add_host:
+        name: "{{ do.droplet.ip_address }}"
+        groups: monitor
+      when: do.droplet is defined
+
+- hosts: monitor
+  sudo: yes
+  tasks:
+      # Install apache, update_cache is like running `apt-get update`
+    - name: Install Apache2
+      apt: name=apache2 state=latest update_cache=yes
+
+      # Install PHP5
+    - name: Install PHP 5
+      apt: name={{ item }} state=latest
+      with_items:
+        - php5
+        - php5-cgi
+        - php5-cli
+        - php5-curl
+        - php5-json
+        - php5-odbc
+        - php5-tidy
+        - php5-common
+        - php5-sqlite
+        - php5-xmlrpc
+        - libapache2-mod-php5
+
+      # Install MySQL, python-mysqldb is required by ansible for use of the
+      # MySQL modules
+    - name: Install MySQL
+      apt: name={{ item }} state=latest
+      with_items:
+        - mysql-server
+        - python-mysqldb
+        - php5-mysql
+        - libapache2-mod-auth-mysql
+
+    - name: Install nagios extras
+      apt: name={{ item }} state=latest
+      with_items:
+        - libgd2-xpm-dev 
+        - openssl 
+        - libssl-dev 
+        - apache2-utils
+    - name: Create swap
+      command: name={{ item }}
+      with_items:
+        - dd if=/dev/zero of=/swap bs=1024 count=2097152
+        - mkswap /swap && sudo chown root. /swap && sudo chmod 0600 /swap && sudo swapon /swap
+        - sh -c "echo /swap swap swap defaults 0 0 >> /etc/fstab"
+        - sh -c "echo vm.swappiness = 0 >> /etc/sysctl.conf && sysctl -p"
+    - name: Create nagios user
+      command: name={{ item }}
+      with_items:
+        - useradd nagios
+        - groupadd nagcmd
+        - usermod -a -G nagcmd nagios
+      # Start MySQL
+    - name: Start MySQL
+      service: name=mysql state=started
+
+      # create a 16 digit password using an openssl function, we will
+      # assign, aka. register, the output to 'mysql_root_pass'
+    - name: Create MySQL root pass
+      command: /usr/bin/openssl rand -base64 16
+      register: mysql_root_pass
+
+      # Updating root password for multiple host names.  We can pass the
+      # hosts in the same way that we passed them with adding packages,
+      # we are also using the ansibles 'get_facts' variables, 
+      # 'ansible_hostname'.  Using variables like this is great when you
+      # are deploying to multiple machines
+    - name: Update MySQL root passwd
+      mysql_user: name=root host={{ item }} password={{ mysql_root_pass.stdout }}
+      with_items:
+        - "{{ ansible_hostname }}"
+        - 127.0.0.1
+        - ::1
+        - localhost
+
+    - name: copy .my.cnf file with root password credentials
+      template: src=templates/my.cnf.j2 dest=/root/.my.cnf owner=root mode=0600
+
+    - name: delete anonymous MySQL server user for localhost
+      mysql_user: name="" state=absent
+
+    - name: remove the MySQL test database
+      mysql_db: name=test state=absent
+    - debug: var=mysql_root_passpwd
+
+    - name: build nagios from source
+      command: name={{ item }}
+      with_items: 
+      - wget http://prdownloads.sourceforge.net/sourceforge/nagios/nagios-4.0.8.tar.gz
+      - tar xvf nagios-*.tar.gz
+      - ./configure --with-nagios-group=nagios --with-command-group=nagcmd
+      - make all
+      - make install
+      - make install-commandmode
+      - make install-init
+      - make install-config
+      - /usr/bin/install -c -m 644 sample-config/httpd.conf /etc/apache2/sites-available/nagios.conf
+      args:
+        chdir: nagios-*/
+    - name: get nagios plugins
+      command: name={{ item }}
+      with_items:
+        - wget http://nagios-plugins.org/download/nagios-plugins-2.0.3.tar.gz
+        - tar xvf nagios-plugins-*.tar.gz
+    - name: install nagios plugins
+      command: "{{item}}"
+      with_items: 
+      - ./configure --with-nagios-user=nagios --with-nagios-group=nagios --with-openssl
+      - make
+      - sudo make install
+      args:
+        chdir: nagios-plugins-*/
+    - name: create config directory should upload contact config here too
+      command: name={{ item }}
+      with_items:
+        - sudo mkdir /usr/local/nagios/etc/servers
+    - name: configure apache
+      command: name={{ item }}
+      with_items:
+      - a2enmod rewrite
+      - a2enmod cgi
+      - htpasswd -db /usr/local/nagios/etc/htpasswd.users nagiosadmin awesome
+      - ln -s /etc/apache2/sites-available/nagios.conf /etc/apache2/sites-enabled/
+      - service nagios start
+      - service apache2 restart
+      - ln -s /etc/init.d/nagios /etc/rcS.d/S99nagios
+
+
+
+
