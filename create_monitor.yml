@@ -27,9 +27,16 @@
         name: "{{ do.droplet.ip_address }}"
         groups: monitor
       when: do.droplet is defined
-
+    - name: Wait for SSH to come up
+      local_action: 
+        module: wait_for 
+          host={{ do.droplet.ip_address }}
+          port=22
+          delay=0
+          timeout=320
+          state=started
+        sudo: false
 - hosts: monitor
-  sudo: yes
   tasks:
       # Install apache, update_cache is like running `apt-get update`
     - name: Install Apache2
@@ -68,35 +75,26 @@
         - openssl 
         - libssl-dev 
         - apache2-utils
-    - name: Create swap
-      command: name={{ item }}
-      with_items:
-        - dd if=/dev/zero of=/swap bs=1024 count=2097152
-        - mkswap /swap && sudo chown root. /swap && sudo chmod 0600 /swap && sudo swapon /swap
-        - sh -c "echo /swap swap swap defaults 0 0 >> /etc/fstab"
-        - sh -c "echo vm.swappiness = 0 >> /etc/sysctl.conf && sysctl -p"
+      #copy the swap script and run it
+    - copy: src=/home/meneal/Documents/nodeDO/mk_swap.sh dest=~/mk_swap.sh
+    - script: mk_swap.sh
     - name: Create nagios user
-      command: name={{ item }}
+      command: "{{ item }}"
       with_items:
         - useradd nagios
         - groupadd nagcmd
         - usermod -a -G nagcmd nagios
+      #remove this later
+      ignore_errors: True
       # Start MySQL
     - name: Start MySQL
       service: name=mysql state=started
 
-      # create a 16 digit password using an openssl function, we will
-      # assign, aka. register, the output to 'mysql_root_pass'
-    - name: Create MySQL root pass
+    - name: create mysql root pass
       command: /usr/bin/openssl rand -base64 16
       register: mysql_root_pass
 
-      # Updating root password for multiple host names.  We can pass the
-      # hosts in the same way that we passed them with adding packages,
-      # we are also using the ansibles 'get_facts' variables, 
-      # 'ansible_hostname'.  Using variables like this is great when you
-      # are deploying to multiple machines
-    - name: Update MySQL root passwd
+    - name: update mysql root passwd
       mysql_user: name=root host={{ item }} password={{ mysql_root_pass.stdout }}
       with_items:
         - "{{ ansible_hostname }}"
@@ -112,13 +110,24 @@
 
     - name: remove the MySQL test database
       mysql_db: name=test state=absent
-    - debug: var=mysql_root_passpwd
+    - debug: var=mysql_root_pass
+
+    - name: get nagios source files
+      get_url:
+        url="http://prdownloads.sourceforge.net/sourceforge/nagios/nagios-4.0.8.tar.gz"
+        dest="/root/"
+      register: new_archive
+
+    - name: unarchive the source files
+      unarchive:
+        src="/root/nagios-4.0.8.tar.gz"
+        dest="/root/"
+        copy=no
+      when: new_archive|changed
 
     - name: build nagios from source
-      command: name={{ item }}
+      command: "{{ item }}"
       with_items: 
-      - wget http://prdownloads.sourceforge.net/sourceforge/nagios/nagios-4.0.8.tar.gz
-      - tar xvf nagios-*.tar.gz
       - ./configure --with-nagios-group=nagios --with-command-group=nagcmd
       - make all
       - make install
@@ -127,12 +136,21 @@
       - make install-config
       - /usr/bin/install -c -m 644 sample-config/httpd.conf /etc/apache2/sites-available/nagios.conf
       args:
-        chdir: nagios-*/
-    - name: get nagios plugins
-      command: name={{ item }}
-      with_items:
-        - wget http://nagios-plugins.org/download/nagios-plugins-2.0.3.tar.gz
-        - tar xvf nagios-plugins-*.tar.gz
+        chdir: nagios-4.0.8/
+
+    - name: get nagios plugins files
+      get_url:
+        url="http://nagios-plugins.org/download/nagios-plugins-2.0.3.tar.gz"
+        dest="/root/"
+      register: new_archive2
+
+    - name: unarchive the plugins
+      unarchive:
+        src="/root/nagios-plugins-2.0.3.tar.gz"
+        dest="/root/"
+        copy=no
+      when: new_archive|changed
+
     - name: install nagios plugins
       command: "{{item}}"
       with_items: 
@@ -140,17 +158,20 @@
       - make
       - sudo make install
       args:
-        chdir: nagios-plugins-*/
+        chdir: nagios-plugins-2.0.3/
+
     - name: create config directory should upload contact config here too
-      command: name={{ item }}
+      command: "{{ item }}"
       with_items:
         - sudo mkdir /usr/local/nagios/etc/servers
+    - copy: src=/home/meneal/Documents/nodeDO/nagios.cfg dest=/usr/local/nagios/etc/nagios.cfg
+    - copy: src=/home/meneal/Documents/nodeDO/contacts.cfg dest=/usr/local/nagios/etc/objects/contacts.cfg
     - name: configure apache
-      command: name={{ item }}
+      command: "{{ item }}"
       with_items:
       - a2enmod rewrite
       - a2enmod cgi
-      - htpasswd -db /usr/local/nagios/etc/htpasswd.users nagiosadmin awesome
+      - htpasswd -db -c /usr/local/nagios/etc/htpasswd.users nagiosadmin awesome
       - ln -s /etc/apache2/sites-available/nagios.conf /etc/apache2/sites-enabled/
       - service nagios start
       - service apache2 restart
