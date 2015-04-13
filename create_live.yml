@@ -59,10 +59,11 @@
 - hosts: live
   sudo: yes
   tasks:
-  - name: set env vars
-    command: export CLOUD_FLARE={{ ansible_env.CLOUD_FLARE }}
+  - lineinfile: "dest=/etc/environment line=CLOUD_FLARE='{{ lookup('env','CLOUD_FLARE') }}'"
   - copy: src=/home/meneal/Documents/nodeDO/thanatosdns.sh dest=~/thanatosdns.sh
-  - script: thanatosdns.sh
+  - command: chmod +x thanatosdns.sh
+  - shell: . /etc/environment && ~/thanatosdns.sh
+    sudo: no
   - name: get nrpe and install
     apt: pkg=nagios-plugins update_cache=true
     apt: pkg=nagios-nrpe-server

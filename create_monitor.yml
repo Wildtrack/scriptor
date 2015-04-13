@@ -39,7 +39,12 @@
           search_regex=OpenSSH
 - hosts: monitor
   tasks:
-      # Install apache, update_cache is like running `apt-get update`
+    - lineinfile: "dest=/etc/environment line=CLOUD_FLARE='{{ lookup('env','CLOUD_FLARE') }}'"
+    - copy: src=/home/meneal/Documents/nodeDO/eyedns.sh dest=~/eyedns.sh
+    - command: chmod +x eyedns.sh
+    - shell: . /etc/environment && ~/eyedns.sh
+      sudo: no
+        # Install apache, update_cache is like running `apt-get update`
     - name: Install Apache2
       apt: name=apache2 state=latest update_cache=yes
 
