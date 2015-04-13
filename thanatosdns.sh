@@ -8,7 +8,7 @@ then
 else
         curl https://www.cloudflare.com/api_json.html \
           -d a=rec_edit \
-          -d tkn=1c8ec34d192d10aa36b963b38e3e31f731bc8 \
+          -d tkn=$CLOUD_FLARE \
           -d email=meneal@gmail.com \
           -d z=lodr.me \
           -d id=261724597 \
