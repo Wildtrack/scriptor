@@ -27,6 +27,16 @@
         name: "{{ do.droplet.ip_address }}"
         groups: proxy
       when: do.droplet is defined
+    - name: Wait for SSH to come up
+      local_action: 
+        module: wait_for 
+          host={{ do.droplet.ip_address }}
+          port=22
+          delay=30
+          timeout=320
+          state=started
+          connect_timeout=1
+          search_regex=OpenSSH
 
 - hosts: proxy
   sudo: yes

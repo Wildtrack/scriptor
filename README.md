@@ -5,6 +5,7 @@ This repo contains a ton of digital ocean related scripts.  To use them you need
     export DO_API_KEY=xxxxxxxxxxxxxxx
     export DO_CLIENT_ID=xxxxxxxxxxxxxxxxxx
     export DO_API_TOKEN=xxxxxxxxxxxxxxxxxxxx
+    export CLOUD_FLARE=xxxxxxxxxxxxxxxxxxxxx
 
 There are three scripts.  One for setting up a canary, one for a proxy and one for a live node.  They are all run in essentially the same way:
 
@@ -16,4 +17,4 @@ The create_monitor script creates a nagios box per this [link](https://www.digit
 
 The lamp part of the install script is based on the script [here](http://configure.systems/series-ansible-lamp-stack-mysql-secure-installation-p3/).
 
-Added port checking in create_monitor, but it's not working quite correctly yet.
+Added port checking in create_monitor, but it's not working quite correctly yet.  If there is a failure in any of these ansible scripts at GATHERING FACTS, simply rerun the script.

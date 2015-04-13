@@ -32,10 +32,11 @@
         module: wait_for 
           host={{ do.droplet.ip_address }}
           port=22
-          delay=0
-          timeout=320
+          delay=30
+          timeout=400
           state=started
-        sudo: false
+          connect_timeout=1
+          search_regex=OpenSSH
 - hosts: monitor
   tasks:
       # Install apache, update_cache is like running `apt-get update`
@@ -176,7 +177,11 @@
       - service nagios start
       - service apache2 restart
       - ln -s /etc/init.d/nagios /etc/rcS.d/S99nagios
-
+    - copy: src=/home/meneal/Documents/nodeDO/proxy.cfg dest=/usr/local/nagios/etc/servers/proxy.cfg
+    - copy: src=/home/meneal/Documents/nodeDO/thanatos.cfg dest=/usr/local/nagios/etc/servers/thanatos.cfg
+    - copy: src=/home/meneal/Documents/nodeDO/kronos.cfg dest=/usr/local/nagios/etc/servers/kronos.cfg
+    - name: Restart nagios with config files intact
+      command: service nagios reload
 
 
 
